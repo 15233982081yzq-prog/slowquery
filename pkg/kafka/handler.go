@@ -40,6 +40,9 @@ func (h *GroupHandler) Cleanup(session sarama.ConsumerGroupSession) error { // �
 }
 
 func (h *GroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error { // 负责处理被分配给当前消费者的特定分区里的消息流
+	// 创建批量处理器，确保数据安全性：先写入CK，再提交offset
+	batchProcessor := NewBatchProcessor(session, h.service.GetWriter(), 1000, 5*time.Second)
+	
 	// claim.Messages() 返回只读通道 <-chan *ConsumerMessage，持续产生Kafka消息
 	// for ... range 循环会持续从通道中接收消息，直到分区被重新分配或会话结束
 	for message := range claim.Messages() {
@@ -55,32 +58,39 @@ func (h *GroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim s
 		log.Infof("Received message: Topic=%s, Partition=%d, Offset=%d, Key=%s, Value_size:%d",
 			message.Topic, message.Partition, message.Offset, string(message.Key), len(string(message.Value)))
 
-		// 调用分析服务处理消息，Processor会解析message.Value为慢查询日志并进行分析，processor（处理）
-		// 返回值：err(错误), filtered(是否被过滤), flushed(是否写入存储)
-		err, filtered, flushed := h.service.Processor(message) // 每个message不一定被写入到clickhouse 一次message调用一次processor
+		// 调用分析服务处理单条消息，返回处理后的数据和过滤状态
+		processedData, err, filtered := h.service.ProcessSingleMessage(message)
 
 		// 收集Kafka处理指标
 		sysMetrics.CollectKafkaMetrics(fmt.Sprintf("analyzer_%s", message.Topic), sysMetrics.GetStatus(err), time.Since(start))
 
 		// 处理结果分支：
-		if err == nil && flushed {
-			// 处理成功且已写入存储，标记消息已处理（提交偏移量）
-			log.Infof("kafka message topic:%s ,partition:%d ,offset:%d ,timeStamp:%d ,flushed:%t ,session.MarkMessage",
-				message.Topic, message.Partition, message.Offset, message.Timestamp.Unix(), flushed)
-			// MarkMessage提交消息偏移量，确保消息不会被重复处理
-			session.MarkMessage(message, "")
-			continue
-		} else if err == nil && filtered {
-			// 消息被过滤（如不符合分析条件），继续处理下一条，也要提交偏移量哦 避免被重复消费
-			session.MarkMessage(message, "")
-			log.Warningf("Processor message topic:%s,partition:%d,offset:%d,timeStamp:%d was filtered",
-				message.Topic, message.Partition, message.Offset, message.Timestamp.Unix())
-			continue
-		} else if err != nil {
+		if err != nil {
 			// 处理出错，记录错误并关闭Kafka客户端
 			log.Errorf("ConsumeClaim processor error:%s ,kafka client will close", err.Error())
 			return err
 		}
+		
+		if filtered {
+			// 消息被过滤（如不符合分析条件），立即提交offset（因为不需要写入CK）
+			session.MarkMessage(message, "")
+			log.Warningf("Processor message topic:%s,partition:%d,offset:%d,timeStamp:%d was filtered",
+				message.Topic, message.Partition, message.Offset, message.Timestamp.Unix())
+			continue
+		}
+		
+		// 有效消息：加入批量处理器（确保写入CK成功后才提交offset）
+		if err := batchProcessor.AddMessage(message, processedData); err != nil {
+			log.Errorf("BatchProcessor AddMessage error:%s ,kafka client will close", err.Error())
+			return err
+		}
 	}
+	
+	// 消费结束时，强制刷新剩余消息
+	if err := batchProcessor.Flush(); err != nil {
+		log.Errorf("BatchProcessor Flush error:%s", err.Error())
+		return err
+	}
+	
 	return nil
 }

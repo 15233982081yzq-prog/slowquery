@@ -345,3 +345,78 @@ func (srv *Service) Close() {
 		return
 	}
 }
+
+// GetWriter 获取 ClickHouse 写入器，用于批量处理器
+func (srv *Service) GetWriter() store.CKWriter {
+	return srv.writer
+}
+
+// ProcessSingleMessage 处理单条消息，返回处理后的数据和过滤状态
+// 这个方法与 Processor 类似，但不进行写入操作，只返回处理后的数据
+func (srv *Service) ProcessSingleMessage(msg *sarama.ConsumerMessage) (*filebeat.SlowQuery, error, bool) {
+	var (
+		fb    *filebeat.SlowQuery
+		start = time.Now()
+		err   error
+	)
+	
+	// 最后运行
+	defer func() {
+		sysMetrics.CollectServiceMetrics("ProcessSingleMessage", sysMetrics.GetStatus(err), time.Since(start))
+	}()
+	
+	// buildFileBeat会返回一个fb 包含了慢查询的信息：集群，DB，SQL句子...
+	if fb, err = srv.buildFileBeat(string(msg.Value)); err != nil || !fb.Valid() {
+		sysMetrics.CollectMessageFilteredCounter(fmt.Sprintf("analyzer_%s_filtered", msg.Topic), sysMetrics.GetStatus(err), 1)
+		log.Debugf("ProcessSingleMessage topic:%s,partition:%d,offset:%d,message:%s,logTime:%d, error:%v", msg.Topic, msg.Partition, msg.Offset, string(msg.Value), msg.Timestamp.Unix(), err)
+		return nil, nil, true
+	}
+	
+	// 过滤insert into的慢日志
+	if strings.Contains(fb.SlowLog.Query, "insert into") {
+		return nil, nil, true
+	}
+	
+	// 过滤系统用户的慢日志
+	if _, ok := filterUser[fb.SlowLog.User]; ok {
+		return nil, nil, true
+	}
+	
+	// 过滤系统db
+	if _, ok := filterDB[fb.SlowLog.CurrentDB]; ok {
+		return nil, nil, true
+	}
+
+	// query is_hit_index
+	var matched bool // 看是否在低峰时间段 是的话才进行EXPLAIN连数据库做分析否则只是采集慢日志
+	matched, err = srv.matchNameAndTime(fb.Fields.InstanceHost, time.Unix(fb.SlowLog.TimeStamp, 0))
+	if err != nil {
+		log.Errorf("ProcessSingleMessage message topic:%s,partition:%d,offset:%d,logTime:%d matchNameAndTime error:%v", msg.Topic, msg.Partition, msg.Offset, msg.Timestamp.Unix(), err)
+	}
+	log.Infof("%s ip matched, db:%s", fb.Fields.InstanceHost, fb.SlowLog.CurrentDB)
+
+	// 查询执行计划，确定是否命中索引
+	fb.HasOpenIndexSwitch = closeSwitch // 0 = 未开启EXPLAIN检查
+	fb.IsHitIndex = noHitIndex          // 0 = 未命中索引
+	if matched {                        // 在低峰阶段
+		fb.HasOpenIndexSwitch = openSwitch // 开启EXPLAIN检查
+		if has, err := srv.isHitIndex(fb.Fields.InstanceHost, fb.SlowLog.CurrentDB, fb.SlowLog.Query, fb.Fields.InstancePort); err != nil {
+			log.Errorf("ProcessSingleMessage message topic:%s,partition:%d,offset:%d,logTime:%d isHitIndex error:%v", msg.Topic, msg.Partition, msg.Offset, msg.Timestamp.Unix(), err)
+		} else {
+			if has {
+				fb.IsHitIndex = hasHitIndex
+			}
+		} // if - else 的逻辑是if err ！= nil（执行出错） else 执行没问题 if has has的意思是命中索引，执行没问题就把命中索引给他加上去
+	}
+	
+	// 获取团队信息 非核心
+	var roleFunc func(string) string
+	fb.L1L2, fb.Team, roleFunc = srv.getL1L2ByDBName(fb.SlowLog.CurrentDB, fb.Fields.Env)
+
+	if roleFunc != nil {
+		fb.Role = roleFunc(fb.Fields.InstanceHost)
+	}
+	
+	log.Infof("ProcessSingleMessage message topic:%s,partition:%d,offset:%d finish", msg.Topic, msg.Partition, msg.Offset)
+	return fb, nil, false
+}
