@@ -1,0 +1,17 @@
+FROM --platform=linux/amd64 harbor.shopeemobile.com/rds-kube-operator/ubuntu-base:20.04.01
+
+# init workdir and working folder
+RUN mkdir -p /etc/slowquery/ && mkdir -p /tmp/log_analyzer/
+WORKDIR /etc/slowquery/
+
+# copy binary file and config file
+COPY ./bin/slowquery-analyzer /etc/slowquery/
+RUN chmod +x /etc/slowquery/slowquery-analyzer
+
+# change timezone to Asia/Shanghai
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+# run slowquery-analyzer
+ENTRYPOINT ["/etc/slowquery/slowquery-analyzer", "--config=/etc/slowquery/config/slowquery-analyzer.toml"]
+
+

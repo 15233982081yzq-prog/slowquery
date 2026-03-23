@@ -1,0 +1,141 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slowquery-analyzer
+  namespace: smart-slow-query
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: slowquery-analyzer
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: slowquery-analyzer
+    spec:
+      containers:
+        - image: harbor.shopeemobile.com/rds-kube-operator/slowquery-analyzer:v3.0.2
+          name: analyzer
+          command:
+            - "/etc/slowquery/slowquery-analyzer"
+            - "--config=/etc/slowquery/config/slowquery-analyzer.toml"
+          ports:
+          - containerPort: 8098
+            name: grpc
+            protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+              memory: 8Gi
+            requests:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/slowquery/config
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: slowquery-analyzer-config
+        - name: tmp
+          hostPath:
+            path: /data/log/analyzer_log
+            type: DirectoryOrCreate
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowquery-analyzer-config
+  namespace: smart-slow-query
+data:
+  slowquery-analyzer.toml: |-
+    [basic]
+    env = "live"
+    # ======================
+    # clickhouse Config
+    # ======================
+    [clickhouse_client_config]
+    driver = "clickhouse"
+    host = "cluster-szinfra-szinfra-clouddba-online.ck.data-infra.shopee.io"
+    port = 80
+    user = "szinfra_clouddba-cluster_szinfra_szinfra_clouddba_online"
+    password = "OhjPBQEDSr5S"
+    db_name = "szinfra_clouddba_slow_query"
+    max_idle_conn = 10
+    max_open_conn = 15
+    [clickhouse_flusher_config]
+    batch = 1000
+    cycle = "5s"
+    # ======================
+    # kafka Config
+    # ======================
+    [kafka_config]
+    brokers = ["kafka-discover-landing-live-01.airtrunk.i.sz.shopee.io:9092", "kafka-discover-landing-live-02.airtrunk.i.sz.shopee.io:9092", "kafka-discover-landing-live-03.airtrunk.i.sz.shopee.io:9092"]
+    topics = ["rds-slow-query-global-live"]
+    groupID = "slow_query_live_global"
+    # ======================
+    # cache Config
+    # ======================
+    [filter_config]
+    satisfaction = 0.0000001   # 百万分之一
+    default_cap = 1000000
+    # ======================
+    # fresh finger filter config
+    # ======================
+    [fresh_filter_config]
+    batch_size = 40000
+    cron_spec = "50 * * * *"
+    count_by_single = 400000
+    max_concurrent = 25
+    valid_days = 7
+    query_lead = "10m"
+    # ======================
+    # Server Log config
+    # ======================
+    [server_log_config]
+    log_name = "analyzer"
+    log_level = "info"
+    log_path = "/tmp/log_analyzer"
+    log_max_file_size = 500 #单位:MB
+    log_max_backups = 10
+    log_max_age = 10
+    log_compress = true
+    # ======================
+    # analyzer config
+    # ======================
+    [analyzer_config]
+    keep_hint = true
+    # ======================
+    # monitor_db_config
+    # ======================
+    [monitor_db_config]
+    username = "db_monitor_rw"
+    password = "xoL_mj8AyjLfuLqOQijHW"
+    host = "master.21652581d48bd3ad.mysql.cloud.shopee.io"
+    port = 6606
+    db_name = "shopee_daily_report_db"
+    log_mode = true
+    connect_timeout = 20
+    max_idle_conns = 10
+    max_open_conns = 50
+    error_retry = 3
+    # ======================
+    # remote_mysql_access
+    # ======================
+    [remote_mysql_access]
+    user = "shopeeroot"
+    key = "XmFZwm12R_buqkxneLw5"
+    # ======================
+    # cmdb config
+    # ======================
+    [cmdb_config]
+    space_host = "https://space.shopee.io"
+    dbameta_auth_token = "7hmsd73RMM"

@@ -1,0 +1,16 @@
+FROM --platform=linux/amd64 harbor.shopeemobile.com/rds-kube-operator/ubuntu-base:20.04.01
+
+# init workdir and working folder
+WORKDIR /etc/slowquery/
+
+# copy binary file and config file
+COPY ./bin/slowquery-platform /etc/slowquery/
+RUN chmod +x /etc/slowquery/slowquery-platform
+
+# change timezone to Asia/Shanghai
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+# run slowquery-platform
+ENTRYPOINT ["/etc/slowquery/slowquery-platform", "--config=/etc/slowquery/config/slowquery-platform.toml"]
+
+

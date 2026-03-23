@@ -1,0 +1,188 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slowquery-ck-data-exporter
+  namespace: smart-slow-query
+spec:
+  replicas: 1
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: slowquery-ck-data-exporter
+  template:
+    metadata:
+      annotations:
+        prometheus.io/port: "9237"
+        prometheus.io/scrape: "true"
+      labels:
+        app: slowquery-ck-data-exporter
+    spec:
+      containers:
+        - env:
+            - name: CONFIG
+              value: /etc/slowquery/ck-data-export-config/config.yml
+          image: harbor.shopeemobile.com/rds-kube-operator/slowquery-ck-data-exporter:v0.0.1
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9237
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+          name: prom-sql-exporter
+          ports:
+            - containerPort: 9237
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9237
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+            requests:
+              cpu: 1000m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/slowquery/ck-data-export-config
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: slowquery-ck-data-exporter-config
+        - name: tmp
+          hostPath:
+            path: /data/log/ck-data-exporter
+            type: DirectoryOrCreate
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowquery-ck-data-exporter-config
+  namespace: smart-slow-query
+data:
+  config.yml: |
+    ---
+    jobs:
+    - name: "slow_query_db_trend"
+      interval: '15s'
+      connections:
+      - 'clickhouse+http://szinfra_clouddba-cluster_szinfra_szinfra_clouddba_online:OhjPBQEDSr5S@cluster-szinfra-szinfra-clouddba-online.ck.data-infra.shopee.io:80'
+      queries:
+      - name: "trend_slow_log_db"
+        help: "interval 15s how many slow log from each db"
+        labels:
+          - "trend_slow_log_db"
+          - "database_name"
+          - "new_appeared"
+        values:
+          - "count"
+          - "total_time"
+          - "avg_time"
+        query:  |
+                SELECT 
+                    database_name,toString(is_new_appeared) as new_appeared,count(database_name) as count,sum(query_time) as total_time,total_time/count as avg_time
+                FROM 
+                    szinfra_clouddba_slow_query.slow_query_log_all_rand
+                where
+                    log_time > toDateTime(now() - INTERVAL 15 SECOND)
+                AND
+                    database_name not in ('mysql','information_schema')
+                group BY
+                    database_name,is_new_appeared
+    
+    - name: "statistic_day_have_slow_log_db_num"
+      interval: '600s'
+      connections:
+      - 'clickhouse+http://szinfra_clouddba-cluster_szinfra_szinfra_clouddba_online:OhjPBQEDSr5S@cluster-szinfra-szinfra-clouddba-online.ck.data-infra.shopee.io:80'
+      queries:
+      - name: "today_slow_log_db_num"
+        help: "today how many db have slow log"
+        labels:
+          - "ck_today_slow_log_db_num"
+        values:
+          - "database_count"
+          - "day_time"
+        query:  |
+                SELECT 
+                  COUNT(database_name) AS database_count,day_time
+                FROM (
+                    SELECT
+                      database_name,toDate(log_time) AS day_time
+                    FROM
+                      szinfra_clouddba_slow_query.slow_query_log_all_rand
+                    WHERE
+                      day_time >= today()
+                    GROUP BY
+                      database_name, day_time
+                    ) AS tmp_table
+                GROUP BY
+                    day_time;
+    
+      
+      - name: "total_db_count"
+        help: "clickhouse store total db number"
+        labels:
+          - "ck_total_db_count"
+        values:
+          - "total_db_count"
+        query:  |
+                SELECT 
+                  COUNT(DISTINCT database_name) AS total_db_count
+                FROM
+                  szinfra_clouddba_slow_query.slow_query_log_all_rand;
+    
+      - name: "slow_log_count"
+        help: "slow query record table total message count"
+        labels:
+          - "ck_slow_log_count"
+        values:
+          - "total_count"
+        query:  |
+                select 
+                  count(1) as total_count
+                from 
+                  szinfra_clouddba_slow_query.slow_query_log_all_rand;
+    
+      - name: "today_slow_log_count"
+        help: "today slow query record table total message count"
+        labels:
+          - "ck_today_slow_log_count"
+        values:
+          - "today_total_count"
+        query:  |
+                select 
+                  count(1) as today_total_count
+                from
+                  szinfra_clouddba_slow_query.slow_query_log_all_rand
+                where
+                  log_time >= toStartOfDay(now()) ;
+    
+      - name: "one_hour_db_slow_log_count"
+        help: "every db slow log count / hour"
+        labels:
+          - "ck_one_hour_db_slow_log_count"
+          - "cluster_uuid"
+          - "database_name"
+        values:
+          - "count"
+        query:  |
+                SELECT 
+                    cluster_uuid,database_name,count(database_name) as count
+                FROM 
+                    szinfra_clouddba_slow_query.slow_query_log_all_rand
+                where
+                    log_time >= now() - INTERVAL 1 HOUR
+                AND
+                    database_name not in ('mysql','information_schema')
+                group BY
+                    cluster_uuid,database_name

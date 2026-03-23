@@ -1,0 +1,102 @@
+max_procs: 5
+
+http.enabled: true
+
+monitoring.enabled: false
+
+filebeat.shutdown_timeout: 5s
+
+filebeat.config.inputs:
+  enable: true
+  path: /Users/jian.ian/workspace/gitlab/smart/smart-slowquery/pkg/agent/config/reload/input.yaml
+  reload.enabled: true
+  reload.period: 10s
+
+logging:
+  level: debug
+  files:
+    path: /tmp/filebeat/log
+    interval: 24h
+    keepfiles: 7
+    rotateeverybytes: 1073741824
+  metrics.period: 600s
+  to_files: true
+
+queue.mem:
+  events: 4096
+  flush.min_events: 10
+  flush.timeout: 1s
+
+#filebeat.inputs:
+#  - exclude_lines:
+#      - ^[/\w\.]+.*, Version:.*\. started with:.*
+#      - ^# Time:.*
+#      - '^Tcp port:.*Unix socket:'
+#      - ^Time +Id +Command +Argument$
+#    fields:
+#      cluster_uuid: "cluster_uuid"
+#      host: "192.168.1.1"
+#      port: 12345
+#      environment: "stage"
+#    paths:
+#      - /Users/jian.ian/docker_volume_path/slowlog/slow.log
+#    type: filestream
+#    enabled: true
+#    parsers:
+#      - multiline:
+#          match: after
+#          negate: true
+#          pattern: '^(# User@Host: |# Time: )'
+#          max_lines: 50
+#          timeout: 1s
+#    scan_frequency: 5s
+#    close_inactive: 1m   #24h
+#    clean_inactive: 1m   #24h
+#    clean_removed: true
+#    #harvester_limit: 8
+#    ignore_older: 1m
+#    harvester_buffer_size : 409600  #400KB
+#    max_bytes: 51200 # 50KB    if message over size 50KB filebeat only collection 50KB data , make incomplete data
+#    #tail_files: true
+#    filebeat:
+#      spool_size: 1500
+#      idle_timeout: 2s
+
+processors:
+  - drop_event:
+      when:
+        or:
+          - regexp:
+              message: "(?i).*\\b(EXPLAIN)\\b.*"
+          - not.regexp:
+              message: "(?i).*\\b(SELECT|DELETE|UPDATE|INSERT)\\b.*"
+  - include_fields.fields:
+    - message
+    - fields
+  - rate_limit:
+      limit: 5000/s
+
+#output.file:
+#  path: "/tmp/filebeat"
+#  filename: filebeat
+#  rotate_every_kb: 1000000
+#  number_of_files: 7
+
+output.kafka:
+  enabled: true
+  hosts: ["10.129.116.34:27462","10.129.116.33:27462","10.129.116.35:27462","10.129.116.36:27462","10.129.116.37:27462","10.129.116.31:27462"]
+  topic : "rds-slow-query-sg-test"
+  partition.hash.hash:
+    - 'host:port'
+  required_acks: 1
+  max_message_bytes: 51200
+  retry:
+    backoff: 1s
+    max_retries: 3
+    bulk_max_size: 50
+    bulk_flush_frequency: 1s
+  keep_alive: 5m
+  timeout: 30s
+  worker: 3
+  worker_partition_assignment: sticky
+

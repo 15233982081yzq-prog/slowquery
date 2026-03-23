@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slowquery-openapi
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slowquery-openapi
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: slowquery-openapi
+    spec:
+      containers:
+        - image: harbor.shopeemobile.com/rds-kube-operator/slowquery-openapi:v1.2.51
+          imagePullPolicy: Always
+          name: openapi
+          command:
+            - "/etc/slowquery/slowquery-openapi"
+            - "--config=/etc/slowquery/config/slowquery-openapi.toml"
+          ports:
+            - containerPort: 8098
+              name: grpc
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 200m
+              memory: 200Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/slowquery/config
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: slowquery-openapi-config
+        - name: tmp
+          hostPath:
+            path: /data/log/openapi_log
+            type: DirectoryOrCreate
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowquery-openapi-config
+  namespace: default
+data:
+  slowquery-openapi.toml: |-
+    # ============================================
+    # Server meta
+    # ============================================
+      server_name = "slow-query-openapi"
+      
+      server_env = "test"
+      
+      # log_level {all,debug,info,warn,error,fatal}"
+      log_level = "all"
+      
+      listen_port = 12345
+      
+      gin_mode = "debug"
+      open_api_token = "OPEN_API_TOKEN"
+      db_detail_url = "https://space.test.shopee.io/console/rds/slow_query/live?dbEnv=%s&clusterUUID=%s&dbNames=%s&startTime=%d&endTime=%d"
+      
+      # server_shutdown_max_wait_seconds max wait seconds after server shutdown
+      server_shutdown_max_wait_seconds = 5
+    
+    
+    # ======================
+    # clickhouse Config
+    # ======================
+      [clickhouse_client_config]
+      driver = "http"
+      host = "10.173.1.3"
+      port = 9092
+      user = "staging_szinfra_clouddba-cluster_mpp_poc01_2replicas_online"
+      password = "EdW6KfaIkxjc"
+      db_name = "szinfra_clouddba_slow_query_test"
+      max_idle_conn = 10
+      max_open_conn = 15
+    
+    # ======================
+    # Server Log config
+    # ======================
+      [server_log_config]
+      log_name = "openapi"
+      log_level = "info"
+      log_path = "/tmp/log_openapi"
+      log_max_file_size = 500 #单位:MB
+      log_max_backups = 10
+      log_max_age = 10
+      log_compress = true
+    
+    # ======================
+    # space config
+    # ======================
+      [space_config]
+      space_host = "https://space.test.shopee.io"
+      user = "smart_slow_query"
+      pass = "smart_slow_query@shopee.com"
+    
+    # ======================
+    # http rate limit config
+    # ======================
+      [http_rate_limit]
+      rate = 5
+      capacity = 5

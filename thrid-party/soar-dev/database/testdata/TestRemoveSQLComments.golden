@@ -1,0 +1,8 @@
+select 'c#\'#not comment'
+select "c#\"#not comment"
+
+
+
+
+
+

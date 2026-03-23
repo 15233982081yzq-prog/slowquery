@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>SLOW QUERY DAILY REPORT</title>
+</head>
+<body>
+<h2>DBAAS SLOW QUERY NEW FINGER DAILY REPORT:</h2>
+<h3 color="red">测试邮件-接收到请忽略</h3>
+<table border="1">
+    <tr>
+        <th scope="col">serial_no.</th>
+        <th scope="col">db_name</th>
+        <th scope="col">cmdb</th>
+        <th scope="col">productLine</th>
+        <th scope="col">owners</th>
+        <th scope="col">leaders</th>
+        <th scope="col">New finger</th>
+        <th scope="col">New sql query</th>
+        <th scope="col">datetime</th>
+        <th scope="col">detail_link</th>
+    </tr>
+    {{ range .}}
+    <tr>
+        <td align="center"> {{ .SerialNo }} </td>
+        <td align="center"> {{ .DBName }}</td>
+        <td align="center"> {{ .OwnCMDB }} </td>
+        <td align="center"> {{ .ProductLine }} </td>
+        <td align="center"> {{ .Owners }} </td>
+        <td align="center"> {{ .Leaders }} </td>
+        <td align="center"> {{ .NewFinger }} </td>
+        <td align="center"> {{ .NewSqlQuery }} </td>
+        <td align="center"> {{ .Datetime }} </td>
+        <td align="center"> <a href="{{ .DetailLink }}"> detail </a> </td>
+    </tr>
+    {{ end }}
+</table>
+</body>
+</html>

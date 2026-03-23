@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slowquery-analyzer
+  namespace: slow-query
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: slowquery-analyzer
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: slowquery-analyzer
+    spec:
+      containers:
+        - image: harbor.shopeemobile.com/rds-kube-operator/slowquery-analyzer:v1.1.27
+          name: analyzer
+          command:
+            - "/etc/slowquery/slowquery-analyzer"
+            - "--config=/etc/slowquery/config/slowquery-analyzer.toml"
+          ports:
+          - containerPort: 8098
+            name: grpc
+            protocol: TCP
+          resources:
+            limits:
+              cpu: "4"
+              memory: 4Gi
+            requests:
+              cpu: "1"
+              memory: 2Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/slowquery/config
+      volumes:
+        - name: config
+          configMap:
+            name: slowquery-analyzer-config
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowquery-analyzer-config
+  namespace: slow-query
+data:
+  slowquery-analyzer.toml: |-
+    # ======================
+    # clickhouse Config
+    # ======================
+       [clickhouse_client_config]
+      driver = "clickhouse"
+      host = "10.180.131.45"
+      port = 9000
+      user = "staging_szinfra_clouddba"
+      password = "EdW6KfaIkxjc"
+      db_name = "szinfra_clouddba_slow_query_test"
+      max_idle_conn = 10
+      max_open_conn = 15
+    [clickhouse_flusher_config]
+      batch = 1000
+      cycle = "5s"
+    # ======================
+    # kafka Config
+    # ======================
+    [kafka_config]
+      brokers = ["10.129.116.34:27462", "10.129.116.33:27462", "10.129.116.35:27462", "10.129.116.36:27462", "10.129.116.37:27462", "10.129.116.31:27462"]
+      topics = ["rds-slow-query-sg-test"]  # for test mode
+      groupID = "slow_query_test"
+    # ======================
+    # Server Log config
+    # ======================
+    [server_log_config]
+      log_name = "analyzer"
+      log_level = "info"
+      log_path = "/tmp/log_analyzer"
+      log_max_file_size = 500 #单位:MB
+      log_max_backups = 10
+      log_max_age = 10
+      log_compress = true
+    # ======================
+    # analyzer config
+    # ======================
+    [analyzer_config]
+      keep_hint = true
+    # ======================
+    # cmdb config
+    # ======================
+    [cmdb_config]
+    #live 7hmsd73RMM
+    #test J4fww1MbrpJ2
+      space_host = "https://space.test.shopee.io"
+      dbameta_auth_token = "J4fww1MbrpJ2"

@@ -1,0 +1,51 @@
+
+# ============================================
+# Server meta
+# ============================================
+server_name = "dml-server"
+
+server_env = "test"
+
+# log_level {all,debug,info,warn,error,fatal}"
+log_level = "all"
+
+listen_port = 8090
+
+gin_mode = "debug"
+
+
+# ======================
+# Server Log config
+# ======================
+[server_log]
+log_name = "dml"
+log_level = "info"
+log_path = "/tmp/dml_log"
+log_max_file_size = 200 #单位:MB
+log_max_backups = 10
+log_max_age = 10
+log_compress = true
+
+# ======================
+# space
+# ======================
+[space]
+space_host = "https://space.test.shopee.io"
+user = "db_dml"
+pass = "db_dml@shopee.com"
+
+[cmdb]
+#live 7hmsd73RMM
+#test J4fww1MbrpJ2
+dbameta_auth_token = "J4fww1MbrpJ2"
+
+
+[cmdb_database]
+space="https://space.test.shopee.io"
+path = "/apis/cmdb/v2/service/get_dbameta_dbs_details"
+http_method = "GET"
+client_timeout = "3s"
+
+# if test_mode=true,
+# 1.all user will be regarded as admin
+test_mode = false

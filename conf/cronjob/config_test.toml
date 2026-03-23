@@ -1,0 +1,116 @@
+# ============================================
+# Server meta
+# ============================================
+server_name = "slow-query-cronjob"
+
+server_env = "test"
+
+# log_level {all,debug,info,warn,error,fatal}"
+log_level = "all"
+
+gin_mode = "debug"
+
+# ======================
+# clickhouse Config
+# ======================
+[clickhouse_client_config]
+driver = "clickhouse"
+host = "127.0.0.1"
+port = 8123
+user = "root"
+password = "123456"
+db_name = "szinfra_clouddba_slow_query_test"
+max_idle_conn = 10
+max_open_conn = 30
+max_life_time = "60s"
+
+# ======================
+# Cron Log config
+# ======================
+[cron_log_config]
+log_name = "platform"
+log_level = "info"
+log_path = "/tmp/slow-query_log"
+log_max_file_size = 500 #单位:MB
+log_max_backups = 10
+log_max_age = 10
+log_compress = true
+
+# ======================
+# space config
+# ======================
+[space_config]
+space_host = "https://space.test.shopee.io"
+user = "smart_slow_query"
+pass = "smart_slow_query@shopee.com"
+
+# ======================
+# cmdb_database config
+# ======================
+[cmdb_database_config]
+space = "https://space.test.shopee.io"
+path = "/apis/cmdb/v2/service/get_dbameta_dbs_details"
+http_method = "GET"
+client_timeout = "5s"
+
+# ======================
+# MySQL Config
+# ======================
+[db_config]
+username = "sz_infra_test"
+password = "TnOa9kDGlnb_T9cIhg8w"
+host = "master.585e6d8af19775e6.mysql.cloud.test.shopee.io"
+port = 6606
+db_name = "shopee_exec_meta_db"
+log_mode = true
+connect_timeout = 20
+max_idle_conns = 10
+max_open_conns = 50
+error_retry = 3
+
+# ======================
+# local cache
+# ======================
+[local_cache]
+shards = 1024
+expire_time = "10m"
+clean_time = "3m"
+max_cache_size = 1024 #MB
+
+# ======================
+# cmdb config
+# ======================
+[cmdb_config]
+#live 7hmsd73RMM
+#test J4fww1MbrpJ2
+space_host = "https://space.test.shopee.io"
+dbameta_auth_token = "J4fww1MbrpJ2"
+
+# ============================================
+#          DailyRank
+# ============================================
+[daily_rank_config]
+top = 10
+order_by = "query_time"
+
+# ============================================
+#          rank report
+# ============================================
+[report_email]
+rank_switch = true
+new_finger_switch = true
+user = "dbaas_smart_slow_query"
+pwd = "Pok3OBey83lW1C9GNhx3epSq5BqzqqtB"
+env = "test"
+owner_emails = "jian.bian@shopee.com,hanwen.liu@shopee.com"
+smtp_address = "smtp.test.shopee.io:2525"
+# 2020-07-22: The sender need to stay as keshang.pan@shopee.com. if need to change, need to raise GTS ticket (Type:  Shopee Apply External Email Services)
+mail_sender = "dbaas.slowquery@notifications.shopee.com"
+db_report_template_path = "/Users/jian.ian/workspace/gitlab/smart/smart-slowquery/pkg/service/email/test/template/db_daily_report.html"
+finger_report_template_path = "/Users/jian.ian/workspace/gitlab/smart/smart-slowquery/pkg/service/email/test/template/finger_daily_report.html"
+new_finger_report_template_path = "/Users/hanwen.liu/shopee/smart-slowquery/internal/util/email/test/template/new_finger_daily_report.html"
+db_rank_detail_url = "https://space.test.shopee.io/console/rdslivetest/slow_query/live?cmdbService=%s&dbEnv=%s&clusterUUID=%s&dbNames=%s&startTime=%d&endTime=%d"
+finger_rank_detail_url = "https://space.test.shopee.io/console/rdslivetest/slow_query/live?cmdbService=%s&dbEnv=%s&clusterUUID=%s&dbNames=%s&fingerId=%s&startTime=%d&endTime=%d"
+new_finger_report_detail_url = "https://space.test.shopee.io/console/rdslivetest/slow_query/live?cmdbService=%s&dbEnv=%s&clusterUUID=%s&dbNames=%s&startTime=%d&endTime=%d&appear_type=new_appeared"
+
+

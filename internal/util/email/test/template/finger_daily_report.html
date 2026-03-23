@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>SLOW QUERY DAILY REPORT</title>
+</head>
+<body>
+    <h2>DBAAS SLOW QUERY FINGER DAILY RANK TOP 10:</h2>
+    <h3 color="red">测试邮件-接收到请忽略</h3>
+<table border="1">
+    <tr>
+        <th scope="col">rank_no</th>
+        <th scope="col">finger_sql</th>
+        <th scope="col">cluster_uuid</th>
+        <th scope="col">db_name</th>
+        <th scope="col">cmdb</th>
+        <th scope="col">productLine</th>
+        <th scope="col">owners</th>
+        <th scope="col">total_query_time(s)</th>
+        <th scope="col">count</th>
+        <th scope="col">week-on-week</th>
+        <th scope="col">detail_link</th>
+    </tr>
+    {{ range .}}
+    <tr>
+        <td align="center"> {{ .SerialNo }} </td>
+        <td align="center"> {{ .FingerSql }}</td>
+        <td align="center"> {{ .ClusterUUID }} </td>
+        <td align="center"> {{ .DBName }} </td>
+        <td align="center"> {{ .OwnCMDB }} </td>
+        <td align="center"> {{ .ProductLine }} </td>
+        <td align="center"> {{ .Owners }} </td>
+        <td align="center"> {{ .Total }} </td>
+        <td align="center"> {{ .Count }} </td>
+        <td align="center"> {{ .WeekOnWeek }} </td>
+        <td align="center"> {{ .DetailLink }} </td>
+    </tr>
+    {{ end }}
+</table>
+</body>
+</html>

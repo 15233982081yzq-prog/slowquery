@@ -1,0 +1,64 @@
+# ======================
+# clickhouse Config
+# ======================
+[clickhouse_client_config]
+driver = "clickhouse"
+host = "127.0.0.1"
+port = 9000
+user = "default"
+password = "123456"
+db_name = "default"
+max_idle_conn = 10
+max_open_conn = 15
+
+[clickhouse_flusher_config]
+batch = 500
+cycle = "2s"
+
+# ======================
+# kafka Config
+# ======================
+[kafka_config]
+brokers = ["10.129.116.34:27462", "10.129.116.33:27462", "10.129.116.35:27462", "10.129.116.36:27462", "10.129.116.37:27462", "10.129.116.31:27462"]
+topics = ["rds-slow-query-sg-test"]  # for test mode
+groupID = "slow_query_test"
+
+# ======================
+# Server Log config
+# ======================
+[server_log_config]
+log_name = "analyzer"
+log_level = "info"
+log_path = "/tmp/slow_query/log-analyzer1"
+log_max_file_size = 500 #单位:MB
+log_max_backups = 10
+log_max_age = 10
+log_compress = true
+
+# ======================
+# analyzer config
+# ======================
+[analyzer_config]
+keep_hint = true
+# ======================
+# local cache
+# ======================
+[local_cache]
+shards = 1024
+expire_time = "10m"
+clean_time = "15m"
+max_cache_size = 512 #MB
+# ======================
+# cmdb config
+# ======================
+[cmdb_config]
+#live 7hmsd73RMM
+#test J4fww1MbrpJ2
+space_host = "https://space.test.shopee.io"
+dbameta_auth_token = "J4fww1MbrpJ2"
+
+[cmdb_database_config]
+space="https://space.test.shopee.io"
+path = "/apis/cmdb/v2/service/get_dbameta_dbs_details"
+http_method = "GET"
+client_timeout = "5s"

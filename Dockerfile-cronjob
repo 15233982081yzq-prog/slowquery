@@ -1,0 +1,17 @@
+FROM --platform=linux/amd64 harbor.shopeemobile.com/rds-kube-operator/ubuntu-base:20.04.01
+
+# init workdir and working folder
+RUN mkdir -p /etc/slowquery/ && mkdir -p /tmp/log_cronjob/
+WORKDIR /etc/slowquery/
+
+# copy binary file and config file
+COPY ./bin/slowquery-cronjob /etc/slowquery/
+RUN chmod +x /etc/slowquery/slowquery-cronjob
+
+# change timezone to Asia/Shanghai
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+# run slowquery-analyzer
+ENTRYPOINT ["/etc/slowquery/slowquery-cronjob", "--config=/etc/slowquery/config/slowquery-cronjob.toml"]
+
+

@@ -1,0 +1,35 @@
+- exclude_lines:
+    - ^[/\w\.]+.*, Version:.*\. started with:.*
+    - ^# Time:.*
+    - '^Tcp port:.*Unix socket:'
+    - ^Time +Id +Command +Argument$
+  fields:
+    cluster_uuid: "cluster_uuid"
+    host: "192.168.1.1"
+    environment: "live"
+    cluster_type: "mysql"
+    role: "slave"
+    port: 6606
+  paths:
+    - /Users/jian.ian/docker_volume_path/slowlog/slow.log
+  type: filestream
+  enabled: true
+  parsers:
+    - multiline:
+        match: after
+        negate: true
+        pattern: '^(# User@Host: |# Time: )'
+        max_lines: 100
+        timeout: 1s
+  scan_frequency: 5s
+  close_inactive: 1m   #24h
+  clean_inactive: 1m   #24h
+  clean_removed: true
+  #harvester_limit: 8
+  ignore_older: 1m
+  harvester_buffer_size : 819200  #400KB
+  max_bytes: 51200 # 50KB    if message over size 50KB filebeat only collection 50KB data , make incomplete data
+  #tail_files: true
+  filebeat:
+    spool_size: 3000
+    idle_timeout: 2s

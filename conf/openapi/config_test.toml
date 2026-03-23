@@ -1,0 +1,76 @@
+
+# ============================================
+# Server meta
+# ============================================
+server_name = "slow-query"
+
+server_env = "test"
+
+# log_level {all,debug,info,warn,error,fatal}"
+log_level = "all"
+
+listen_port = 12345
+
+gin_mode = "debug"
+
+open_api_token = "OPEN_API_TOKEN"
+
+# server_shutdown_max_wait_seconds max wait seconds after server shutdown
+server_shutdown_max_wait_seconds = 5
+
+
+# ======================
+# clickhouse Config
+# ======================
+[clickhouse_client_config]
+    driver = "clickhouse"
+    host = "10.180.131.45"
+    port = 9000
+    user = "staging_szinfra_clouddba"
+    password = "EdW6KfaIkxjc"
+    db_name = "szinfra_clouddba_slow_query_test"
+    max_idle_conn = 10
+    max_open_conn = 30
+    max_life_time = "60s"
+
+# ======================
+# Server Log config
+# ======================
+[server_log_config]
+    log_name = "platform"
+    log_level = "info"
+    log_path = "/tmp/slow-query_log"
+    log_max_file_size = 500 #单位:MB
+    log_max_backups = 10
+    log_max_age = 10
+    log_compress = true
+
+# ======================
+# space config
+# ======================
+[space_config]
+    space_host = "https://space.test.shopee.io"
+    user = "smart_slow_query"
+    pass = "smart_slow_query@shopee.com"
+
+# ======================
+# MySQL Config
+# ======================
+[db_config]
+    username = "sz_infra_test"
+    password = "TnOa9kDGlnb_T9cIhg8w"
+    host = "master.585e6d8af19775e6.mysql.cloud.test.shopee.io"
+    port = 6606
+    db_name = "shopee_exec_meta_db"
+    log_mode = true
+    connect_timeout = 20
+    max_idle_conns = 10
+    max_open_conns = 50
+    error_retry = 3
+
+# ======================
+# HTTP RateLimit Config
+# ======================
+[http_rate_limit]
+    rate = 10
+    capacity = 10

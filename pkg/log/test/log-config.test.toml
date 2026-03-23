@@ -1,0 +1,14 @@
+# ======================
+# Server Log config
+# ======================
+[server_log_config]
+log_name = "slow_query"
+log_level = "info"
+log_path = "/tmp"
+log_max_file_size = 100 #单位:MB
+log_max_backups = 8
+log_max_age = 8
+log_compress = true
+
+
+

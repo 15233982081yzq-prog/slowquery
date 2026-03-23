@@ -1,0 +1,648 @@
+apiVersion: mysql.shopee.com/v1
+kind: MysqlClusterDeployment
+metadata:
+  annotations:
+  name: slow-log-with-reload-exportor
+  namespace: default
+spec:
+  configMapTemplates:
+  - apiVersion: v1
+    data:
+      exporter.cnf: |2
+
+        [client]
+        user     = rds_monitor
+        password = v6pBllhQHj_5THgLFGdd
+        host     = 127.0.0.1
+        port     = 6606
+      filebeat-input.yml: |2
+
+        - exclude_lines:
+            - ^[/\w\.]+.*, Version:.*\. started with:.*
+            - ^# Time:.*
+            - '^Tcp port:.*Unix socket:'
+            - ^Time +Id +Command +Argument$
+
+          fields:
+            cluster_uuid: ${CLUSTER_UUID}
+            host: ${POD_IP}
+            port: 6606
+            environment: ${ENVIRONMENT}
+
+          paths:
+            - /data/mysql_log/mysql_slow.log
+
+          type: filestream
+
+          enabled: true
+          
+          parsers:
+            - multiline:
+                match: after
+                negate: true
+                pattern: '^(# User@Host: |# Time: )'
+                max_lines: 50
+                timeout: 1s
+          scan_frequency: 5s
+          close_inactive: 1m   #24h
+          clean_inactive: 1m   #24h
+          clean_removed: true
+          #harvester_limit: 8
+          ignore_older: 1m
+          harvester_buffer_size : 409600  #400KB
+          max_bytes: 51200 # 50KB    if message over size 50KB filebeat only collection 50KB data , make incomplete data
+          #tail_files: true
+          filebeat:
+            spool_size: 1500
+            idle_timeout: 2s
+            
+      filebeat-main.yml: |2
+
+        max_procs: 1
+
+        http:
+          enabled: true
+          host: 0.0.0.0
+
+        filebeat.shutdown_timeout: 5s
+
+        filebeat.config.inputs:
+          enable: true
+          reload.enabled: true
+          reload.period: 10s
+          path: /data/mysql_conf/filebeat-input.yml
+
+        logging:
+          level: debug
+          files:
+            path: /usr/share/filebeat/logs
+            interval: 24h
+            keepfiles: 7
+            rotateeverybytes: 1073741824
+          metrics.period: 600s
+          to_files: true
+
+        queue.mem:
+          events: 512
+          flush.min_events: 10
+          flush.timeout: 1s
+
+        processors:
+          - drop_event:
+              when:
+                or:
+                  - regexp:
+                      message: "(?i).*\\b(EXPLAIN)\\b.*"
+                  - not.regexp:
+                      message: "(?i).*\\b(SELECT|DELETE|UPDATE|INSERT)\\b.*"
+          - include_fields.fields:
+            - message
+            - fields
+          - rate_limit:
+              limit: 1000/s
+
+        output.kafka:
+          enabled: true
+          hosts: ["10.129.116.34:27462","10.129.116.33:27462","10.129.116.35:27462","10.129.116.36:27462","10.129.116.37:27462","10.129.116.31:27462"]
+          topic : "rds-slow-query-sg-test"
+          partition.hash.hash:
+            - '%{[POD_IP]}'
+          required_acks: 1
+          max_message_bytes: 51200
+          retry:
+            backoff: 1s
+            max_retries: 3
+            bulk_max_size: 50
+            bulk_flush_frequency: 1s
+          keep_alive: 5m
+          timeout: 30s
+          worker: 2
+          worker_partition_assignment: sticky
+
+
+
+      monitor.toml: "\n# prometheus http listen port for metric access\nlisten_addr
+        = \"0.0.0.0:9090\"\n# rds group name(a collection of cluster), omit for k8s
+        rds\ngroup_name = \"-\"\n# rds cluster name, omit for k8s rds\ncluster_name
+        = \"-\"\n# rds role(master|slave|ro), omit for k8s rds\nrole = \"-\"\n# eru
+        network name, omit for k8s rds\nnetwork = \"-\"\n# monitor db account\ndb_user
+        = \"rds_monitor\"\ndb_pass = \"v6pBllhQHj_5THgLFGdd\"\ndb_host = \"127.0.0.1\"\ndb_port
+        = \"6606\"\n# mysqld exporter path\nmysqld_exporter_path = \"/metrics-mysqld-exporter\"\n#
+        mysqld exporter port\nmysqld_exporter_port = \"9104\"\n# config reload seconds\nconfig_check_interval
+        = 120\nmysql_param_spec = [\"read_only\", \"offline_mode\", \"sync_binlog\",
+        \"innodb_flush_log_at_trx_commit\", \"innodb_buffer_pool_size\", \"max_connections\",
+        \"audit_log_include_accounts\", \"table_open_cache\", \"expire_logs_days\",
+        \"slave_parallel_workers\"]\n\n[mysql_conf_location]\n# spec_conf: the path
+        to MySQL spec.conf\nmy_conf = \"/data/mysql_conf/my.cnf\"\n[slow_log]\nenable
+        = false\ninterval_sec = 600\nparser_bin_path = \"/usr/bin/pt-query-digest-rds\"\nto_be_parsed_log_path
+        = \"/tmp/mysql_slow.log.tmp\"\n\n[backend_api]\napi_token = \"CCOR8fE4s5SwgR2h65vkV7bELoWMQx8b\"\ntimeout
+        = 10\napi_addr = \"https://space.test.shopee.io\"\nenv = \"non-live\"\nretry_count
+        = 3\n\n\n# the collection of items to be monitored\n[[monitor_item]]\nmetric
+        = \"rds_bytes_sent\"\nmetrc_help = \"the bytes sent of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'bytes_sent'\"\nis_interval = 1\n[[monitor_item]]\nmetric
+        = \"rds_bytes_received\"\nmetrc_help = \"the bytes received of RDS\"   \nget_from
+        = \"sql\"\ncommand = \"show global status like 'bytes_received'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_qps\"\nmetrc_help = \"the queries of
+        RDS\"\nget_from = \"sql\"\ncommand = \"show global status like 'queries'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_max_connections\"\nmetrc_help = \"the
+        max connections of RDS\"\nget_from = \"sql\"\ncommand = \"show global variables
+        like 'max_connections'\"\nis_interval = 0\n[[monitor_item]]\nmetric = \"rds_max_used_connections\"\nmetrc_help
+        = \"the max used connections of RDS\"\nget_from = \"sql\"\ncommand = \"show
+        global status like 'max_used_connections'\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_thread_running\"\nmetrc_help = \"the thread connected of RDS\"\nget_from
+        = \"sql\"\ncommand = \"show global status like 'threads_connected'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_active_threads\"\nmetrc_help = \"the
+        active threads of RDS\"\nget_from = \"sql\"\n#command = \"select 'rds_active_threads',count(1)
+        from information_schema.processlist where command not in ('Sleep','Binlog
+        Dump')\"\ncommand = \"show global status like 'threads_running'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_slow_queries\"\nmetrc_help = \"the slow
+        queries threads of RDS\"\nget_from = \"sql\"\ncommand = \"show global status
+        like 'slow_queries'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_full_table_scan\"\nmetrc_help
+        = \"the select scan num of RDS\"\nget_from = \"sql\"\ncommand = \"show global
+        status like 'select_scan'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_select\"\nmetrc_help
+        = \"the select num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status
+        like 'com_select'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_update\"\nmetrc_help
+        = \"the update num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status
+        like 'com_update'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_delete\"\nmetrc_help
+        = \"the delete num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status
+        like 'com_delete'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_insert\"\nmetrc_help
+        = \"the insert num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status
+        like 'com_insert'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_replace\"\nmetrc_help
+        = \"the replace num of RDS\"\nget_from = \"sql\"\ncommand = \"show global
+        status like 'com_replace'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_commit\"\nmetrc_help
+        = \"the commit num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status
+        like 'com_commit'\"\nis_interval = 1\n[[monitor_item]]\nmetric = \"rds_com_rollback\"\nmetrc_help
+        = \"the rollback num of RDS\"\nget_from = \"sql\"\ncommand = \"show global
+        status like 'com_rollback'\"\nis_interval = 1\n[[monitor_item]]\nmetric =
+        \"rds_created_tmp_tables\"\nmetrc_help = \"the created tmp tables num of RDS\"\nget_from
+        = \"sql\"\ncommand = \"show global status like 'created_tmp_tables'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_created_tmp_files\"\nmetrc_help = \"the
+        created tmp files num of RDS\"\nget_from = \"sql\"\ncommand = \"show global
+        status like 'created_tmp_files'\"\nis_interval = 1\n[[monitor_item]]\nmetric
+        = \"rds_table_locks_waited\"\nmetrc_help = \"the table lock waits num of RDS\"\nget_from
+        = \"sql\"\ncommand = \"show global status like 'table_locks_waited'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_uptime\"\nmetrc_help = \"the uptime
+        of RDS\"\nget_from = \"sql\"\ncommand = \"show global status like 'uptime'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_open_files\"\nmetrc_help = \"the open
+        file num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status like
+        'open_files'\"\nis_interval = 0\n[[monitor_item]]\nmetric = \"rds_cpu_usage\"\nmetrc_help
+        = \"the cpu usage of RDS\"\nget_from = \"shell\"\n# attention: ubuntu at col
+        10, centos at col 9\ncommand = \"top -b -n 1 -p $(pidof mysqld) | grep mysqld
+        | sed 's/[ ][ ]*/ /g' | cut -d ' ' -f10\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_mem_usage\"\nmetrc_help = \"the mem usage of RDS\"\nget_from = \"shell\"\ncommand
+        = \"ps aux | grep mysqld | grep $(pidof mysqld) | grep -v grep | sed 's/[
+        ][ ]*/ /g' | cut -d ' ' -f4\"\nis_interval = 0\n[[monitor_item]]\nmetric =
+        \"rds_data_size_MB\"\nmetrc_help = \"the data size usage of RDS\"\nget_from
+        = \"shell\"\ncommand = \"du -sm /data/mysql_data | awk '{print $1}'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_log_size_MB\"\nmetrc_help = \"the log
+        size usage of RDS\"\nget_from = \"shell\"\ncommand = \"du -sm /data/mysql_log
+        | awk '{print $1}'\"\nis_interval = 0\n[[monitor_item]]\nmetric = \"rds_innodb_num_open_files\"\nmetrc_help
+        = \"the innodb open files of RDS\"\nget_from = \"sql\"\ncommand = \"show global
+        status like 'innodb_num_open_files'\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_innodb_checkpoint_age\"\nmetrc_help = \"the innodb checkpoint age
+        of RDS\"\nget_from = \"sql\"\ncommand = \"show global status like 'innodb_checkpoint_age'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_innodb_checkpoint_max_age\"\nmetrc_help
+        = \"the innodb max checkpoint age of RDS\"\nget_from = \"sql\"\ncommand =
+        \"show global status like 'innodb_checkpoint_max_age'\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_innodb_rows_read\"\nmetrc_help = \"the innodb row read num of RDS\"\nget_from
+        = \"sql\"\ncommand = \"show global status like 'innodb_rows_read'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_rows_updated\"\nmetrc_help =
+        \"the innodb row updated num of RDS\"\nget_from = \"sql\"\ncommand = \"show
+        global status like 'innodb_rows_updated'\"\nis_interval = 1\n[[monitor_item]]\nmetric
+        = \"rds_innodb_rows_inserted\"\nmetrc_help = \"the innodb row inserted num
+        of RDS\"\nget_from = \"sql\"\ncommand = \"show global status like 'innodb_rows_inserted'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_rows_deleted\"\nmetrc_help =
+        \"the innodb row deleted num of RDS\"\nget_from = \"sql\"\ncommand = \"show
+        global status like 'innodb_rows_deleted'\"\nis_interval = 1\n[[monitor_item]]\nmetric
+        = \"rds_innodb_row_lock_waits\"\nmetrc_help = \"the innodb row lock waits
+        num of RDS\"\nget_from = \"sql\"\ncommand = \"show global status like 'innodb_row_lock_waits'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_row_lock_time_avg\"\nmetrc_help
+        = \"the innodb row avg lock time of RDS\"\nget_from = \"sql\"\ncommand = \"show
+        global status like 'innodb_row_lock_time_avg'\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_innodb_log_writes\"\nmetrc_help = \"the innodb log writes of RDS\"\nget_from
+        = \"sql\"\ncommand = \"show global status like 'innodb_log_writes'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_size\"\nmetrc_help
+        = \"the innodb log buffer size of RDS\"\nget_from = \"sql\"\ncommand = \"show
+        global variables like 'innodb_buffer_pool_size'\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_innodb_buffer_pool_instances\"\nmetrc_help = \"the innodb buffer instances
+        of RDS\"\nget_from = \"sql\"\ncommand = \"show global variables like 'innodb_buffer_pool_instances'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_pages_dirty\"\nmetrc_help
+        = \"the innodb buffer pool dirty pages of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'innodb_buffer_pool_pages_dirty'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_write_requests\"\nmetrc_help
+        = \"the innodb buffer pool write requests of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'innodb_buffer_pool_write_requests'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_read_requests\"\nmetrc_help
+        = \"the innodb buffer pool read requests of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'innodb_buffer_pool_read_requests'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_page_lru_flushed\"\nmetrc_help
+        = \"the innodb buffer pool lru flushed num of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'innodb_buffer_pool_pages_LRU_flushed'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_pages_made_young\"\nmetrc_help
+        = \"the innodb buffer pool made young pages of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'innodb_buffer_pool_pages_made_young'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_innodb_buffer_pool_pages_made_not_young\"\nmetrc_help
+        = \"the innodb buffer pool not made young pages of RDS\"\nget_from = \"sql\"\ncommand
+        = \"show global status like 'innodb_buffer_pool_pages_made_not_young'\"\nis_interval
+        = 1\n[[monitor_item]]\nmetric = \"rds_threadpool_idle_threads\"\nmetrc_help
+        = \"the threadpool idle threads of RDS\"\nget_from = \"sql\"\ncommand = \"show
+        global status like 'threadpool_idle_threads'\"\nis_interval = 0\n[[monitor_item]]\nmetric
+        = \"rds_innodb_os_log_pending_fsyncs\"\nmetrc_help = \"the innodb os log pending
+        fsyncs of RDS\"\nget_from = \"sql\"\ncommand = \"show global status like 'innodb_os_log_pending_fsyncs'\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_slave_io_running\"\nmetrc_help = \"the
+        slave io status of RDS\"\nget_from = \"slavesql\"\ncommand = \"show slave
+        status\"\nis_interval = 0\n[[monitor_item]]\nmetric = \"rds_slave_sql_running\"\nmetrc_help
+        = \"the slave sql status of RDS\"\nget_from = \"slavesql\"\ncommand = \"show
+        slave status\"\nis_interval = 0\n[[monitor_item]]\nmetric = \"rds_seconds_behind_master\"\nmetrc_help
+        = \"the slave lag seconds from master\"\nget_from = \"sql\"\ncommand = \"select
+        'rds_seconds_behind_master',timestampdiff(second,ts,now()) from mysql.heartbeat\"\nis_interval
+        = 0\n[[monitor_item]]\nmetric = \"rds_filebeat_num\"\nmetrc_help = \"the filebeat
+        number in RDS\"\nget_from = \"shell\"\ncommand = \"ps -ef | grep filebeat
+        | grep -v grep | wc -l\"\nis_interval = 0\n[[monitor_item]]\nmetric = \"rds_filebeat_err_num\"\nmetrc_help
+        = \"the filebeat err number in RDS\"\nget_from = \"shell\"\ncommand = \"tail
+        -n 100 /var/log/filebeat/filebeat | grep ERR | wc -l\"\nis_interval = 0\n"
+      my.cnf: |
+        [mysql]
+        port           = 6606
+        socket         = /data/mysql_tmp/mysql.sock
+        prompt         = \u@\h:\p:[\d]>
+        no-auto-rehash
+
+        [mysqld]
+        # port configure#
+        port                                      = 6606
+        extra_port                                = 6607
+        # audit configuration
+        audit_log_buffer_size                     = 32768
+        audit_log_file                            = audit.log
+        audit_log_format                          = JSON
+        audit_log_policy                          = ALL
+        audit_log_rotate_on_size                  = 1G
+        audit_log_rotations                       = 1
+        audit_log_include_accounts                = shopeeroot@localhost
+        # plugins
+        plugin_load                               = "audit_log.so;query_response_time.so;validate_password.so;rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"
+        validate-password                         = FORCE_PLUS_PERMANENT
+        validate_password_policy                  = STRONG
+        validate_password_dictionary_file         = "/data/mysql_base/lib/mysql/plugin/validate_password.so"
+        # replication
+        log_slave_updates                         = ON
+        binlog_error_action                       = ABORT_SERVER
+        binlog_format                             = ROW
+        skip-slave-start                          = 1 #default OFF
+        relay_log_recovery                        = 1
+        enforce_gtid_consistency                  = ON
+        gtid_mode                                 = ON
+        master_info_repository                    = TABLE
+        relay_log_info_repository                 = TABLE
+        slave_parallel_type                       = LOGICAL_CLOCK
+        slave_preserve_commit_order               = ON
+        slave-net-timeout                         = 60
+        slave_transaction_retries                 = 128
+        slave_parallel_workers                    = 2
+        # semi sync variables
+        rpl_semi_sync_master_enabled              = ON
+        rpl_semi_sync_slave_enabled               = ON
+        rpl_semi_sync_master_wait_point           = AFTER_SYNC
+        rpl_semi_sync_master_wait_for_slave_count = 1
+        rpl_semi_sync_master_timeout              = 1000
+        rpl_semi_sync_master_wait_no_slave        = OFF
+        # base configuration
+        basedir                                   = /data/mysql_base/
+        datadir                                   = /data/mysql_data/
+        socket                                    = /data/mysql_tmp/mysql.sock
+        tmpdir                                    = /data/mysql_tmp/
+        pid-file                                  = /data/mysql_data/mysql.pid
+        relay-log                                 = /data/mysql_log/relay-bin
+        log_bin                                   = /data/mysql_log/mysql-bin
+        log_bin_index                             = /data/mysql_log/mysql-bin.index
+        log-error                                 = /data/mysql_log/mysql_error.log
+        character-set-server                      = utf8mb4
+        explicit_defaults_for_timestamp           = ON
+        extra_max_connections                     = 8
+        local_infile                              = OFF
+        max_connect_errors                        = 1000000
+        max_binlog_size                           = 1G
+        query_cache_size                          = 0
+        show_compatibility_56                     = ON
+        sql_mode                                  = "STRICT_TRANS_TABLES,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO"
+        thread_cache_size                         = 100
+        expire_logs_days                          = 14
+        offline_mode                              = OFF
+        open_files_limit                          = 102400
+        read_only                                 = "ON"
+        sync_binlog                               = 1
+        max_allowed_packet                        = 8388608
+        max_connections                           = 20000
+        slave_net_timeout                         = 4
+        skip_name_resolve
+        # Slow log
+        slow_query_log                            = ON
+        slow_query_log_file                       = /data/mysql_log/mysql_slow.log
+        max_slowlog_files                         = 7
+        max_slowlog_size                          = 1G
+        long_query_time                           = 0.0001
+        slow_query_log_use_global_control         = "log_slow_filter,log_slow_rate_limit,log_slow_verbosity,long_query_time"
+        # Performance Schema
+        performance_schema                        = "ON"
+        performance_schema_max_file_instances     = 102400
+        performance_schema_max_table_instances    = 102400
+        # InnoDB
+        innodb_log_group_home_dir                 = /data/mysql_log/
+        innodb_temp_data_file_path                = "ibtmp1:12M:autoextend:max:1G"
+        innodb_autoinc_lock_mode                  = 2
+        innodb_flush_method                       = O_DIRECT
+        # innodb_numa_interleave               = 1
+        innodb_read_io_threads                    = 16
+        innodb_write_io_threads                   = 16
+        innodb_undo_tablespaces                   = 3
+        innodb_undo_log_truncate                  = ON
+        innodb_max_undo_log_size                  = 2G
+        innodb_online_alter_log_max_size          = 1G
+        innodb_print_all_deadlocks                = ON
+        innodb_buffer_pool_dump_pct               = 100
+        innodb_flush_neighbors                    = 0
+        innodb_io_capacity                        = 20000
+        innodb_io_capacity_max                    = 40000
+        innodb_max_dirty_pages_pct                = 60
+        innodb_stats_persistent_sample_pages      = 64
+        table_definition_cache                    = 4096
+        table_open_cache                          = 5000
+        innodb_flush_log_at_trx_commit            = 1
+        innodb_buffer_pool_size                   = 1073741824
+        innodb_buffer_pool_instances              = 4
+        innodb_page_cleaners                      = 4
+        innodb_open_files                         = 10240
+        innodb_log_file_size                      = "512MB"
+        innodb_log_files_in_group                 = 3
+        # report_*
+        report_port                               = 6606
+        # thread_pool#
+        thread_handling                           = pool-of-threads
+        thread_pool_stall_limit                   = 50
+        thread_pool_oversubscribe                 = 32
+        thread_pool_size                          = 1
+        # MyISAM
+        skip-symbolic-links
+        myisam_recover_options                    = FORCE,BACKUP
+
+        [xtrabackup]
+        socket = /data/mysql_tmp/mysql.sock
+    kind: ConfigMap
+    metadata:
+      name: config-map
+      namespace: default
+  networkPolicy:
+    ipReclaimPolicy: Retain
+  priorityClassName: P2
+  provisioningPolicy: Thin
+  provisioningStrategy:
+    name: increase-by-unit-step
+  replicas: 3
+  resourceSpec:
+    limits:
+      cpu: 500m
+      memory: 4Gi
+      readBPS: "10485760"
+      readIOPS: 1k
+      storage: 20Gi
+      unit: "1"
+      writeBPS: "10485760"
+      writeIOPS: 1k
+    requests:
+      cpu: 100m
+      memory: 4Gi
+      readBPS: "10485760"
+      readIOPS: 1k
+      storage: 20Gi
+      unit: "1"
+      writeBPS: "10485760"
+      writeIOPS: 1k
+  serverType:
+  - ssd
+  strategy:
+    failureHandlingRules:
+    - policy: Ignore
+    ioLimitationRule:
+      policy: Dynamic
+    stopRules:
+      matchExpressions:
+      - key: rds.dbcp.shopee.io/instance-name
+        operator: In
+    updateRules:
+      removeList:
+      - rdsbc9430d2749d7b33-cls-rkvhz7p5-ms-9
+  template:
+    metadata:
+      labels:
+        rds-cluster-name: rdsbc9430d2749d7b33
+    spec:
+      containers:
+      - command:
+        - /bin/bash
+        - /opt/start.sh
+        image: harbor.shopeemobile.com/cloud/ubuntu_dbaas_rds_5.7.29:1.1.8
+        imagePullPolicy: IfNotPresent
+        lifecycle: {}
+        livenessProbe:
+          failureThreshold: 6
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          tcpSocket:
+            port: 6606
+          timeoutSeconds: 5
+        name: mysql
+        ports:
+        - containerPort: 6606
+          protocol: TCP
+        - containerPort: 6607
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 6
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          tcpSocket:
+            port: 6606
+          timeoutSeconds: 5
+        resources: {}
+        startupProbe:
+          failureThreshold: 30
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          tcpSocket:
+            port: 6606
+          timeoutSeconds: 5
+        volumeMounts:
+        - mountPath: /data/
+          name: pvc
+        - mountPath: /data/mysql_conf
+          name: config-map
+      - command:
+        - /bin/mysqld_exporter
+        - --config.my-cnf=/data/mysql_conf/exporter.cnf
+        - --web.listen-address
+        - :9104
+        - --collect.binlog_size
+        - --collect.global_status
+        - --collect.global_variables
+        - --collect.info_schema.innodb_metrics
+        - --collect.info_schema.innodb_cmp
+        - --collect.info_schema.innodb_cmpmem
+        - --collect.info_schema.processlist
+        - --collect.info_schema.query_response_time
+        - --collect.info_schema.userstats
+        - --collect.perf_schema.eventswaits
+        - --collect.perf_schema.file_events
+        - --collect.slave_status
+        - --collect.engine_innodb_status
+        - --collect.heartbeat
+        - --collect.heartbeat.database=mysql
+        - --collect.heartbeat.table=heartbeat
+        image: prom/mysqld-exporter:v0.14.0
+        imagePullPolicy: IfNotPresent
+        lifecycle: {}
+        livenessProbe:
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          tcpSocket:
+            port: 9104
+          timeoutSeconds: 5
+        name: exporter
+        ports:
+        - containerPort: 9104
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 256Mi
+          requests:
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /data/
+          name: pvc
+        - mountPath: /data/mysql_conf
+          name: config-map
+      - command:
+        - filebeat
+        - -c
+        - /data/mysql_conf/filebeat-main.yml
+        env:
+        - name: ENVIRONMENT
+          value: stage
+        - name: CLUSTER_UUID
+          value: slow-log-test-cluster-uuid
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        image: docker.elastic.co/beats/filebeat:8.4.1
+        imagePullPolicy: IfNotPresent
+        name: filebeat
+        ports:
+        - containerPort: 5066
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 256Mi
+          requests:
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /data/
+          name: pvc
+          readOnly: true
+        - mountPath: /data/mysql_conf
+          name: config-map
+      - command:
+        - /bin/beat-exporter
+        image: harbor.shopeemobile.com/rds-kube-operator/beat-exporter:0.4.0
+        imagePullPolicy: IfNotPresent
+        name: filebeat-exporter
+        ports:
+        - containerPort: 9479
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 256Mi
+          requests:
+            memory: 64Mi
+      - command:
+        - /usr/bin/rds-monitor
+        - --log-level
+        - info
+        - --config
+        - /data/mysql_conf/monitor.toml
+        image: harbor.shopeemobile.com/cloud/rds-monitor:v1.19.4
+        imagePullPolicy: IfNotPresent
+        name: rds-monitor
+        ports:
+        - containerPort: 9090
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 100m
+            memory: 256Mi
+          requests:
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /data/
+          name: pvc
+        - mountPath: /data/mysql_conf
+          name: config-map
+      initContainers:
+      - command:
+        - /bin/bash
+        - /opt/init.sh
+        image: harbor.shopeemobile.com/cloud/ubuntu_dbaas_rds_5.7.29:1.1.8
+        imagePullPolicy: IfNotPresent
+        name: init
+        resources:
+          limits:
+            cpu: 500m
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 4Gi
+        volumeMounts:
+        - mountPath: /data/
+          name: pvc
+      volumes:
+      - emptyDir: {}
+        name: dir
+      - configMap:
+          name: config-map
+        name: config-map
+      - name: pvc
+        persistentVolumeClaim:
+          claimName: pvc
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: pvc
+      namespace: default
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        limits:
+          storage: 20Gi
+        requests:
+          storage: 20Gi
+      storageClassName: csi-carina-lvm-ext4

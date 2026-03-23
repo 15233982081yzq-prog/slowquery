@@ -1,0 +1,95 @@
+# ======================
+# clickhouse Config
+# ======================
+[clickhouse_client_config]
+    driver = "clickhouse"
+    host = "127.0.0.1"
+    port = 8123
+    user = "root"
+    password = "123456"
+    db_name = "szinfra_clouddba_slow_query_test"
+    max_idle_conn = 10
+    max_open_conn = 30
+    max_life_time = "60s"
+
+[clickhouse_flusher_config]
+    batch = 1000
+    cycle = "5s"
+
+# ======================
+# kafka Config
+# ======================
+[kafka_config]
+    brokers = ["10.129.116.34:27462", "10.129.116.33:27462", "10.129.116.35:27462", "10.129.116.36:27462", "10.129.116.37:27462", "10.129.116.31:27462"]
+    topics = ["rds-slow-query-sg-test"]  # for test mode，只是一个模版
+    groupID = "slow_query_test"
+
+# ======================
+# cache Config
+# ======================
+[filter_config]
+satisfaction = 0.0000001   # 百万分之一
+default_cap = 1000000
+# ======================
+# fresh finger filter config
+# ======================
+[fresh_filter_config]
+batch_size = 50000
+cron_spec = "* * * * *"
+count_by_single = 500000
+max_concurrent = 25
+valid_days = 7
+query_lead = "10m"
+
+# ======================
+# Server Log config
+# ======================
+[server_log_config]
+    log_name = "analyzer"
+    log_level = "info"
+    log_path = "/tmp/slow_query/log-analyzer1"
+    log_max_file_size = 500 #单位:MB
+    log_max_backups = 10
+    log_max_age = 10
+    log_compress = true
+
+# ======================
+# analyzer config
+# ======================
+[analyzer_config]
+    keep_hint = true
+
+# ======================
+# cmdb config
+# ======================
+[cmdb_config]
+#live 7hmsd73RMM
+#test J4fww1MbrpJ2
+space_host = "https://space.test.shopee.io"
+dbameta_auth_token = "J4fww1MbrpJ2"
+
+# ======================
+# remote_mysql_access
+# ======================
+[remote_mysql_access]
+is_test = false
+user = "shopeeroot"
+key = "XmFZwm12R_buqkxneLw5"
+
+# ======================
+# monitor_db_config
+# ======================
+[monitor_db_config]
+[db_config]
+username = "sz_infra_test"
+password = "TnOa9kDGlnb_T9cIhg8w"
+host = "master.585e6d8af19775e6.mysql.cloud.test.shopee.io"
+port = 6606
+db_name = "shopee_exec_meta_db"
+log_mode = true
+connect_timeout = 20
+max_idle_conns = 10
+max_open_conns = 50
+error_retry = 3
+
+

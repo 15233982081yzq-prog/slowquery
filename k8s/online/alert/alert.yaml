@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slowquery-alert
+  namespace: smart-slow-query
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: slowquery-alert
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: slowquery-alert
+    spec:
+      containers:
+        - image: harbor.shopeemobile.com/rds-kube-operator/slowquery-alert:v1.3.5
+          imagePullPolicy: Always
+          name: alert
+          command:
+            - "/etc/slowquery/slowquery-alert"
+            - "--config=/etc/conf/config.live.toml"
+          ports:
+            - containerPort: 8098
+              name: grpc
+              protocol: TCP
+          env:
+            - name: ENV
+              value: "live"
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+            requests:
+              cpu: 800m
+              memory: 800Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/conf
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: slowquery-alert-config
+        - name: tmp
+          hostPath:
+            path: /data/log/alert_log
+            type: DirectoryOrCreate
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowquery-alert-config
+  namespace: smart-slow-query
+data:
+  config.live.toml: |-
+    # ============================================
+    # Server meta
+    # ============================================
+    server_name = "slow-query"
+    
+    server_env = "live"
+    
+    # log_level {all,debug,info,warn,error,fatal}"
+    log_level = "all"
+    
+    listen_port = 12345
+    
+    gin_mode = "debug"
+    
+    callback_token = "CALLBACK_TOKEN"
+    call_back_url = "https://space.shopee.io/rds/smart/v1/alert_api/live/slowquery/monitor/alert_callback"
+    
+    # server_shutdown_max_wait_seconds max wait seconds after server shutdown
+    server_shutdown_max_wait_seconds = 5
+    
+    admins = ["jian.bian@shopee.com", "hanwen.liu@shopee.com"]
+    
+    
+    # ======================
+    # clickhouse Config
+    # ======================
+    [clickhouse_client_config]
+    driver = "http"
+    host = "cluster-szinfra-szinfra-clouddba-online.ck.data-infra.shopee.io"
+    port = 80
+    user = "szinfra_clouddba-cluster_szinfra_szinfra_clouddba_online"
+    password = "OhjPBQEDSr5S"
+    db_name = "szinfra_clouddba_slow_query"
+    compression = true
+    max_idle_conn = 10
+    max_open_conn = 15
+    
+    # ======================
+    # Server Log config
+    # ======================
+    [server_log_config]
+    log_name = "alert"
+    log_level = "info"
+    log_path = "/tmp/alert_log"
+    log_max_file_size = 500 #单位:MB
+    log_max_backups = 10
+    log_max_age = 10
+    log_compress = true
+    
+    # ======================
+    # space config
+    # ======================
+    [space_config]
+    space_host = "https://space.shopee.io"
+    user = "smart_slow_query"
+    pass = "smart_slow_query@shopee.com"
+    
+    # ======================
+    # MySQL Config
+    # ======================
+    [db_config]
+    username = "smart_slow_query"
+    password = "VbgKWPhdMsHELW_sMzUd"
+    host = "db-master-smart-slow-query-sg1-live.shopeemobile.com"
+    port = 6606
+    db_name = "shopee_smart_slow_query_db"
+    log_mode = true
+    connect_timeout = 20
+    max_idle_conns = 10
+    max_open_conns = 50
+    error_retry = 3
+    
+    # ======================
+    # Monitor Config
+    # ======================
+    [monitor_client_config]
+    base_url = "https://monitoring.infra.sz.shopee.io"
+    timeout = "10s"
+    client_id = "tQFpsS54"
+    client_secret = "Ha2obEyA0T4DQC25Q8R8YHaLjezueZ5I"
+    metric_store_names = "smart-slow-query-live"
+    seatalk_msg_id = ""
+    email_msg_id = ""
+    
+    # ======================
+    # Dod Config
+    # ======================
+    [dod_config]
+    # live https://dod.shopee.io
+    # test https://dod.test.shopee.io
+    dod_base_url = "https://dod.shopee.io"
+    timeout = "10s"
+    
+    [cmdb_database_config]
+    space = "https://space.shopee.io"
+    path = "/apis/cmdb/v2/service/get_dbameta_dbs_details"
+    http_method = "GET"
+    client_timeout = "5s"
+    
+    [user_group_config]
+    # live 50917    test 26638
+    dbass_team_id = 50917
+    # live 51353 test 30530
+    dba_dod_id = 51353
+    # if test_mode=true,
+    # 1.all user will be regarded as admin
+    test_mode = false
+    
+    # ======================
+    # Alert Template
+    # ======================
+    [alert_templates]
+    [alert_templates.uuid]
+    uuid = "uuid"
+    name = "ShopeeRDSMySQL_Slow_SQL_Too_Many"
+    promQL_template = "sql_one_hour_db_slow_log_count{ {{.DBInfo}} } {{.Expression}} {{.ExpressionValue}}"
+    desc = "MySQL Slow Log Too Many"
+    expression = [">", "<", "="]
+    type = "no_param"

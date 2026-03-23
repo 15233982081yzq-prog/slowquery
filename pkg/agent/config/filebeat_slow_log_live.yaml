@@ -1,0 +1,61 @@
+max_procs: 1
+
+http.enabled: true
+
+monitoring.enabled: false
+
+filebeat.shutdown_timeout: 5s
+
+filebeat.config.inputs:
+  enable: true
+  path: /Users/jian.ian/workspace/gitlab/smart/smart-slowquery/pkg/agent/config/reload/input.yaml
+  reload.enabled: true
+  reload.period: 10s
+
+logging:
+  level: debug
+  files:
+    path: /tmp/filebeat/log
+    interval: 24h
+    keepfiles: 7
+    rotateeverybytes: 1073741824
+  metrics.period: 600s
+  to_files: true
+
+queue.mem:
+  events: 2048
+  flush.min_events: 10
+  flush.timeout: 1s
+
+processors:
+  - drop_event:
+      when:
+        or:
+          - regexp:
+              message: "(?i).*\\b(EXPLAIN)\\b.*"
+          - not.regexp:
+              message: "(?i).*\\b(SELECT|DELETE|UPDATE|INSERT)\\b.*"
+  - include_fields.fields:
+      - message
+      - fields
+  - rate_limit:
+      limit: 30/s
+
+output.kafka:
+  enabled: true
+  hosts: ["10.129.116.34:27462","10.129.116.33:27462","10.129.116.35:27462","10.129.116.36:27462","10.129.116.37:27462","10.129.116.31:27462"]
+  topic : "rds-slow-query-sg-test"
+  partition.hash.hash:
+    - 'host:port'
+  required_acks: 1
+  max_message_bytes: 51200
+  retry:
+    backoff: 1s
+    max_retries: 3
+    bulk_max_size: 50
+    bulk_flush_frequency: 1s
+  keep_alive: 5m
+  timeout: 30s
+  worker: 2
+  worker_partition_assignment: sticky
+

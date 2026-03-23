@@ -1,0 +1,322 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: slowquery-daily-rank-cronjob
+spec:
+  failedJobsHistoryLimit: 1
+  successfulJobsHistoryLimit: 1
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid # or Replace depends on your need
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure  # 在这里指定重启策略
+          containers:
+            - image: harbor.shopeemobile.com/rds-kube-operator/slowquery-crontab:v1.0.93
+              imagePullPolicy: Always
+              name: slowquery-daily-rank-cronjob
+              command:
+                - "/etc/slowquery/slowquery-cronjob"
+                - "--config=/etc/slowquery/config/slowquery-cronjob.toml"
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/slowquery/config
+                - name: db-report-template
+                  mountPath: /etc/slowquery/template/db
+                - name: finger-report-template
+                  mountPath: /etc/slowquery/template/finger
+                - name: new-finger-report-template
+                  mountPath: /etc/slowquery/template/new-finger
+                - name: tmp
+                  mountPath: /etc/slowquery/logs
+          volumes:
+            - name: config
+              configMap:
+                name: slowquery-daily-rank-config
+            - name: db-report-template
+              configMap:
+                name: db-daily-report-template
+            - name: finger-report-template
+              configMap:
+                name: finger-daily-report-template
+            - name: new-finger-report-template
+              configMap:
+                name: new-finger-daily-report-template
+            - name: tmp
+              hostPath:
+                path: /data/log/cronjob_log
+                type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slowquery-daily-rank-config
+  namespace: default
+data:
+  slowquery-cronjob.toml: |-
+    # ============================================
+    # Server meta
+    # ============================================
+      server_name = "slow-query-platform"
+      server_env = "test"
+      # log_level {all,debug,info,warn,error,fatal}"
+      log_level = "all"
+      listen_port = 12345
+      gin_mode = "debug"
+      # server_shutdown_max_wait_seconds max wait seconds after server shutdown
+      server_shutdown_max_wait_seconds = 5
+    
+    
+    # ======================
+    # clickhouse Config
+    # ======================
+      [clickhouse_client_config]
+      driver = "http"
+      host = "10.173.1.3"
+      port = 9092
+      user = "staging_szinfra_clouddba-cluster_mpp_poc01_2replicas_online"
+      password = "EdW6KfaIkxjc"
+      db_name = "szinfra_clouddba_slow_query_test"
+      max_idle_conn = 10
+      max_open_conn = 15
+    
+    # ======================
+    # CronJob Log config
+    # ======================
+      [cron_log_config]
+      log_name = "cronjob"
+      log_level = "info"
+      log_path = "/etc/slowquery/logs/log_cronjob"
+      log_max_file_size = 500 #单位:MB
+      log_max_backups = 10
+      log_max_age = 10
+      log_compress = true
+    
+    # ======================
+    # space config
+    # ======================
+      [space_config]
+      space_host = "https://space.test.shopee.io"
+      space_env = "test"
+      user = "smart_slow_query"
+      pass = "smart_slow_query@shopee.com"
+    
+    # ======================
+    # cmdb_database config
+    # ======================
+      [cmdb_database_config]
+      space="https://space.test.shopee.io"
+      path = "/apis/cmdb/v2/service/get_dbameta_dbs_details"
+      http_method = "GET"
+      client_timeout = "5s"
+    
+    # ======================
+    # user group config
+    # ======================
+      [user_group_config]
+    # live 50917    test 26638
+      dbass_team_id = 26638
+      # live 51353 test 30530
+      dba_dod_id = 30530
+      # if test_mode=true,
+      # 1.all user will be regarded as admin
+      test_mode = false
+    
+    # ======================
+    # MySQL Config
+    # ======================
+      [db_config]
+      username = "sz_infra_test"
+      password = "TnOa9kDGlnb_T9cIhg8w"
+      host = "master.585e6d8af19775e6.mysql.cloud.test.shopee.io"
+      port = 6606
+      db_name = "shopee_exec_meta_db"
+      log_mode = true
+      connect_timeout = 20
+      max_idle_conns = 10
+      max_open_conns = 50
+      error_retry = 3
+    
+    # ======================
+    # cmdb config
+    # ======================
+      [cmdb_config]
+    #live 7hmsd73RMM
+    #test J4fww1MbrpJ2
+      space_host = "https://space.test.shopee.io"
+      dbameta_auth_token = "J4fww1MbrpJ2"
+    
+    # ============================================
+    #          DailyRank
+    # ============================================
+      [daily_rank_config]
+      top = 10
+      order_by = "query_time"   
+    
+    # ============================================
+    #          rank report
+    # ============================================
+      [report_email]
+      rank_switch = true
+      new_finger_switch = true
+      user = "dbaas_smart_slow_query"
+      pwd = "Pok3OBey83lW1C9GNhx3epSq5BqzqqtB"
+      env = "live"
+      owner_emails = "jian.bian@shopee.com,jianpu.cao@shopee.com,qingyuan.yu@shopee.com,hanwen.liu@shopee.com,wangran@shopee.com"
+      smtp_address = "smtp.test.shopee.io:2525"
+      mail_sender = "dbaas.slowquery@notifications.shopee.com"
+      db_report_template_path = "/etc/slowquery/template/db/db_report_template.html"
+      finger_report_template_path = "/etc/slowquery/template/finger/finger_report_template.html"
+      new_finger_report_template_path = "/etc/slowquery/template/new-finger//new_finger_daily_report.html"
+      db_rank_detail_url = "https://space.test.shopee.io/console/rdslivetest/slow_query/live?cmdbService=%s&dbEnv=%s&clusterUUID=%s&dbNames=%s&startTime=%d&endTime=%d"
+      finger_rank_detail_url = "https://space.test.shopee.io/console/rdslivetest/slow_query/live?cmdbService=%s&dbEnv=%s&clusterUUID=%s&dbNames=%s&fingerId=%s&startTime=%d&endTime=%d"
+      new_finger_report_detail_url = "https://space.test.shopee.io/console/rdslivetest/slow_query/live?cmdbService=%s&dbEnv=%s&clusterUUID=%s&dbNames=%s&startTime=%d&endTime=%d&appearType=new_appeared"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-daily-report-template
+  namespace: default
+data:
+  db_report_template.html: |-
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <title>SLOW QUERY DAILY REPORT</title>
+    </head>
+      <body>
+        <h2>DBAAS SLOW QUERY DB DAILY RANK TOP 10:</h2>
+        <h3 color="red">live环境-platform测试邮件-内部测试期一周通过后正式发送给各产品线L2负责人</h3>
+        <table border="1">
+          <tr>
+            <th scope="col">rank_no</th>
+            <th scope="col">cluster_uuid</th>
+            <th scope="col">db_name</th>
+            <th scope="col">cmdb</th>
+            <th scope="col">productLine</th>
+            <th scope="col">owners</th>
+            <th scope="col">leaders</th>
+            <th scope="col">total_query_time(s)</th>
+            <th scope="col">count</th>
+            <th scope="col">week-on-week</th>
+            <th scope="col">detail_link</th>
+          </tr>
+          {{ range .}}
+          <tr>
+            <td align="center"> {{ .SerialNo }} </td>
+            <td align="center"> {{ .ClusterUUID }} </td>
+            <td align="center"> {{ .DBName }} </td>
+            <td align="center"> {{ .OwnCMDB }}</td>
+            <td align="center"> {{ .ProductLine }}</td>
+            <td align="center"> {{ .Owners }}</td>
+            <td align="center"> {{ .Leaders }}</td>
+            <td align="center"> {{ .Total }} </td>
+            <td align="center"> {{ .Count }} </td>
+            <td align="center"> {{ .WeekOnWeek }} </td>
+            <td align="center"> <a href="{{ .DetailLink }}"> detail </a> </td>
+          </tr>
+          {{ end }}
+        </table>
+      </body>
+    </html>
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finger-daily-report-template
+  namespace: default
+data:
+  finger_report_template.html: |-
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <title>SLOW QUERY DAILY REPORT</title>
+    </head>
+      <body>
+        <h2>DBAAS SLOW QUERY FINGER DAILY RANK TOP 10:</h2>
+        <h3 color="red">live环境-platform测试邮件-内部测试期一周通过后正式发送给各产品线L2负责人</h3>
+      <table border="1">
+        <tr>
+          <th scope="col">rank_no</th>
+          <th scope="col">finger_sql</th>
+          <th scope="col">cluster_uuid</th>
+          <th scope="col">db_name</th>
+          <th scope="col">cmdb</th>
+          <th scope="col">productLine</th>
+          <th scope="col">owners</th>
+          <th scope="col">leaders</th>
+          <th scope="col">total_query_time(s)</th>
+          <th scope="col">count</th>
+          <th scope="col">week-on-week</th>
+          <th scope="col">detail_link</th>
+        </tr>
+        {{ range .}}
+        <tr>
+          <td align="center"> {{ .SerialNo }} </td>
+          <td align="center"> {{ .FingerSql }}</td>
+          <td align="center"> {{ .ClusterUUID }} </td>
+          <td align="center"> {{ .DBName }} </td>
+          <td align="center"> {{ .OwnCMDB }} </td>
+          <td align="center"> {{ .ProductLine }} </td>
+          <td align="center"> {{ .Owners }} </td>
+          <td align="center"> {{ .Leaders }} </td>
+          <td align="center"> {{ .Total }} </td>
+          <td align="center"> {{ .Count }} </td>
+          <td align="center"> {{ .WeekOnWeek }} </td>
+          <td align="center"> <a href="{{ .DetailLink }}"> detail </a> </td>
+        </tr>
+        {{ end }}
+      </table>
+      </body>
+    </html>
+      
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: new-finger-daily-report-template
+  namespace: default
+data:
+  new_finger_daily_report.html: |-
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <title>SLOW QUERY DAILY REPORT</title>
+    </head>
+    <body>
+    <h2>DBAAS SLOW QUERY NEW FINGER DAILY REPORT:</h2>
+    <h3 color="red">测试邮件-接收到请忽略</h3>
+    <table border="1">
+        <tr>
+            <th scope="col">serial_no</th>
+            <th scope="col">db_name</th>
+            <th scope="col">cmdb</th>
+            <th scope="col">productLine</th>
+            <th scope="col">owners</th>
+            <th scope="col">leaders</th>
+            <th scope="col">New finger</th>
+            <th scope="col">New sql query</th>
+            <th scope="col">datetime</th>
+            <th scope="col">detail_link</th>
+        </tr>
+        {{ range .}}
+        <tr>
+            <td align="center"> {{ .SerialNo }}</td>
+            <td align="center"> {{ .DBName }}</td>
+            <td align="center"> {{ .OwnCMDB }}</td>
+            <td align="center"> {{ .ProductLine }}</td>
+            <td align="center"> {{ .Owners }}</td>
+            <td align="center"> {{ .Leaders }}</td>
+            <td align="center"> {{ .NewFinger }}</td>
+            <td align="center"> {{ .NewSqlQuery }}</td>
+            <td align="center"> {{ .Datetime }}</td>
+            <td align="center"><a href="{{ .DetailLink }}"> detail </a></td>
+        </tr>
+        {{ end }}
+    </table>
+    </body>
+    </html>

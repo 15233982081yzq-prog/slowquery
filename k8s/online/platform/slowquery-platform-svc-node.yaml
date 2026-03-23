@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+  labels:
+    app: slowquery-platform
+  name: slowquery-platform-svc-node
+  namespace: smart-slow-query
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 8080
+    nodePort: 30183
+    protocol: TCP
+    targetPort: 12345
+  selector:
+    app: slowquery-platform
+  sessionAffinity: None
+  type: NodePort

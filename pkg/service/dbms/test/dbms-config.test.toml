@@ -1,0 +1,21 @@
+# cmdb config
+# ======================
+[cmdb_config]
+#live 7hmsd73RMM
+#test J4fww1MbrpJ2
+space_host = "https://space.test.shopee.io"
+dbameta_auth_token = "J4fww1MbrpJ2"
+
+
+
+# ======================
+# Server Log config
+# ======================
+[server_log]
+log_name = "dml"
+log_level = "info"
+log_path = "/tmp/dml_log"
+log_max_file_size = 200 #单位:MB
+log_max_backups = 10
+log_max_age = 10
+log_compress = true

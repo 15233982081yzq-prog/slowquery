@@ -1,0 +1,72 @@
+[
+  {
+    "text": "select 1",
+    "offset": 0,
+    "SQLBigResult": false,
+    "SQLBufferResult": false,
+    "SQLCache": true,
+    "SQLSmallResult": false,
+    "CalcFoundRows": false,
+    "StraightJoin": false,
+    "Priority": 0,
+    "ExplicitAll": false,
+    "Distinct": false,
+    "From": null,
+    "Where": null,
+    "Fields": {
+      "text": "",
+      "offset": 0,
+      "Fields": [
+        {
+          "text": "1",
+          "offset": 0,
+          "Offset": 7,
+          "WildCard": null,
+          "Expr": {
+            "text": "",
+            "offset": 7,
+            "Type": {
+              "Tp": 8,
+              "Flag": 128,
+              "Flen": 1,
+              "Decimal": 0,
+              "Charset": "binary",
+              "Collate": "binary",
+              "Elems": null
+            },
+            "flag": 0,
+            "k": 1,
+            "decimal": 0,
+            "length": 0,
+            "i": 1,
+            "collation": "",
+            "b": null,
+            "x": null,
+            "projectionOffset": -1
+          },
+          "AsName": {
+            "O": "",
+            "L": ""
+          },
+          "Auxiliary": false
+        }
+      ]
+    },
+    "GroupBy": null,
+    "Having": null,
+    "WindowSpecs": null,
+    "OrderBy": null,
+    "Limit": null,
+    "LockInfo": null,
+    "TableHints": null,
+    "IsInBraces": false,
+    "WithBeforeBraces": false,
+    "QueryBlockOffset": 0,
+    "SelectIntoOpt": null,
+    "AfterSetOperator": null,
+    "Kind": 0,
+    "Lists": null,
+    "With": null
+  }
+]
+
